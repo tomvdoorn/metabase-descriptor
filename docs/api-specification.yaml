@@ -1,0 +1,1506 @@
+openapi: 3.0.3
+info:
+  title: Metabase Description Generator API
+  description: |
+    AI-powered Metabase question description generator with visual tree interface.
+    
+    This API provides endpoints for managing Metabase connections, collections, dashboards, 
+    questions, and AI-generated descriptions with approval workflows.
+    
+    ## Authentication
+    This API uses JWT Bearer token authentication. Include the token in the Authorization header:
+    ```
+    Authorization: Bearer <your-jwt-token>
+    ```
+    
+    ## Rate Limiting
+    API requests are limited to 100 requests per 15-minute window per IP address.
+    
+    ## Error Handling
+    All endpoints return consistent error responses with HTTP status codes and detailed error messages.
+  version: 1.0.0
+  contact:
+    name: Metabase Description Generator Team
+    url: https://github.com/tomvdoorn/metabase-descriptor
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3001/api/v1
+    description: Development server
+  - url: https://api.metabase-descriptor.com/api/v1
+    description: Production server
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Authentication
+    description: User authentication and token management
+  - name: Collections
+    description: Metabase collection hierarchy management
+  - name: Dashboards
+    description: Dashboard information and management
+  - name: Questions
+    description: Question details and metadata
+  - name: Descriptions
+    description: AI-generated description management
+  - name: Jobs
+    description: Background job management and monitoring
+  - name: Users
+    description: User management and profiles
+  - name: Connections
+    description: Metabase connection configuration
+
+paths:
+  # =================== AUTHENTICATION ===================
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: User login
+      description: Authenticate user and return JWT tokens
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              email: user@example.com
+              password: password123
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /auth/refresh:
+    post:
+      tags: [Authentication]
+      summary: Refresh access token
+      description: Get new access token using refresh token
+      operationId: refreshToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/RefreshTokenResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      summary: User logout
+      description: Invalidate current session tokens
+      operationId: logout
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: "Logged out successfully"
+
+  # =================== COLLECTIONS ===================
+  /collections:
+    get:
+      tags: [Collections]
+      summary: List collections
+      description: Get paginated list of collections with optional filtering
+      operationId: listCollections
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: search
+          in: query
+          description: Search collections by name
+          schema:
+            type: string
+        - name: parentId
+          in: query
+          description: Filter by parent collection ID
+          schema:
+            type: string
+            format: uuid
+        - name: connectionId
+          in: query
+          description: Filter by Metabase connection ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Collections retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Collection'
+                      pagination:
+                        $ref: '#/components/schemas/PaginationMeta'
+
+  /collections/{id}/tree:
+    get:
+      tags: [Collections]
+      summary: Get collection tree
+      description: Get hierarchical tree structure for a collection and its children
+      operationId: getCollectionTree
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Collection tree retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CollectionTreeNode'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /collections/{id}:
+    get:
+      tags: [Collections]
+      summary: Get collection details
+      description: Get detailed information about a specific collection
+      operationId: getCollection
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Collection details retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Collection'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # =================== DASHBOARDS ===================
+  /dashboards:
+    get:
+      tags: [Dashboards]
+      summary: List dashboards
+      description: Get paginated list of dashboards
+      operationId: listDashboards
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: collectionId
+          in: query
+          description: Filter by collection ID
+          schema:
+            type: string
+            format: uuid
+        - name: search
+          in: query
+          description: Search dashboards by name
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Dashboards retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Dashboard'
+                      pagination:
+                        $ref: '#/components/schemas/PaginationMeta'
+
+  /dashboards/{id}:
+    get:
+      tags: [Dashboards]
+      summary: Get dashboard details
+      description: Get detailed information about a dashboard including its questions
+      operationId: getDashboard
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: includeQuestions
+          in: query
+          description: Include questions in the response
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Dashboard details retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Dashboard'
+                          - type: object
+                            properties:
+                              questions:
+                                type: array
+                                items:
+                                  $ref: '#/components/schemas/Question'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # =================== QUESTIONS ===================
+  /questions:
+    get:
+      tags: [Questions]
+      summary: List questions
+      description: Get paginated list of questions with optional filtering
+      operationId: listQuestions
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: dashboardId
+          in: query
+          description: Filter by dashboard ID
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          description: Filter by description status
+          schema:
+            $ref: '#/components/schemas/DescriptionStatus'
+        - name: queryType
+          in: query
+          description: Filter by query type
+          schema:
+            $ref: '#/components/schemas/QueryType'
+        - name: search
+          in: query
+          description: Search questions by name
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Questions retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/QuestionWithDescription'
+                      pagination:
+                        $ref: '#/components/schemas/PaginationMeta'
+
+  /questions/{id}:
+    get:
+      tags: [Questions]
+      summary: Get question details
+      description: Get detailed information about a question including its description
+      operationId: getQuestion
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Question details retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/QuestionWithDescription'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /questions/{id}/metadata:
+    get:
+      tags: [Questions]
+      summary: Get question metadata
+      description: Get detailed metadata for question analysis
+      operationId: getQuestionMetadata
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Question metadata retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/QuestionMetadata'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # =================== DESCRIPTIONS ===================
+  /descriptions:
+    post:
+      tags: [Descriptions]
+      summary: Generate description
+      description: Generate AI description for a question
+      operationId: generateDescription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateDescriptionRequest'
+            example:
+              questionId: "q0000001-0000-0000-0000-000000000001"
+              aiProvider: "openai"
+              aiModel: "gpt-4"
+              useTemplate: true
+      responses:
+        '201':
+          description: Description generated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/GenerateDescriptionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /descriptions/bulk:
+    post:
+      tags: [Descriptions]
+      summary: Bulk generate descriptions
+      description: Generate descriptions for multiple questions as a background job
+      operationId: bulkGenerateDescriptions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkGenerateRequest'
+      responses:
+        '202':
+          description: Bulk generation job created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/GenerationJob'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /descriptions/{id}:
+    get:
+      tags: [Descriptions]
+      summary: Get description
+      description: Get description details
+      operationId: getDescription
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Description retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Description'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [Descriptions]
+      summary: Update description
+      description: Update description text or approval status
+      operationId: updateDescription
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDescriptionRequest'
+      responses:
+        '200':
+          description: Description updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Description'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Descriptions]
+      summary: Delete description
+      description: Delete a description
+      operationId: deleteDescription
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Description deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # =================== JOBS ===================
+  /jobs:
+    get:
+      tags: [Jobs]
+      summary: List jobs
+      description: Get paginated list of generation jobs
+      operationId: listJobs
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: type
+          in: query
+          description: Filter by job type
+          schema:
+            $ref: '#/components/schemas/JobType'
+        - name: status
+          in: query
+          description: Filter by job status
+          schema:
+            $ref: '#/components/schemas/JobStatus'
+      responses:
+        '200':
+          description: Jobs retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/GenerationJob'
+                      pagination:
+                        $ref: '#/components/schemas/PaginationMeta'
+
+  /jobs/{id}:
+    get:
+      tags: [Jobs]
+      summary: Get job details
+      description: Get detailed information about a generation job
+      operationId: getJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Job details retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/GenerationJob'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Jobs]
+      summary: Cancel job
+      description: Cancel a running job
+      operationId: cancelJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Job cancelled successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/GenerationJob'
+        '400':
+          description: Job cannot be cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # =================== USERS ===================
+  /users/profile:
+    get:
+      tags: [Users]
+      summary: Get user profile
+      description: Get current user's profile information
+      operationId: getUserProfile
+      responses:
+        '200':
+          description: User profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/User'
+
+    put:
+      tags: [Users]
+      summary: Update user profile
+      description: Update current user's profile information
+      operationId: updateUserProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                firstName:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                lastName:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: Profile updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/User'
+
+  # =================== CONNECTIONS ===================
+  /connections:
+    get:
+      tags: [Connections]
+      summary: List Metabase connections
+      description: Get list of configured Metabase connections
+      operationId: listConnections
+      responses:
+        '200':
+          description: Connections retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/MetabaseConnection'
+
+    post:
+      tags: [Connections]
+      summary: Create Metabase connection
+      description: Create new Metabase connection configuration
+      operationId: createConnection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, url, credentials]
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                url:
+                  type: string
+                  format: uri
+                credentials:
+                  type: object
+                  description: API key or username/password (will be encrypted)
+                  properties:
+                    apiKey:
+                      type: string
+                    username:
+                      type: string
+                    password:
+                      type: string
+      responses:
+        '201':
+          description: Connection created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/MetabaseConnection'
+
+  /connections/{id}:
+    get:
+      tags: [Connections]
+      summary: Get connection details
+      description: Get detailed information about a Metabase connection
+      operationId: getConnection
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Connection details retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/MetabaseConnection'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [Connections]
+      summary: Update connection
+      description: Update Metabase connection configuration
+      operationId: updateConnection
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                url:
+                  type: string
+                  format: uri
+                credentials:
+                  type: object
+                  description: API key or username/password (will be encrypted)
+                isActive:
+                  type: boolean
+      responses:
+        '200':
+          description: Connection updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/MetabaseConnection'
+
+    delete:
+      tags: [Connections]
+      summary: Delete connection
+      description: Delete a Metabase connection
+      operationId: deleteConnection
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Connection deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /connections/{id}/sync:
+    post:
+      tags: [Connections]
+      summary: Sync connection data
+      description: Trigger synchronization with Metabase instance
+      operationId: syncConnection
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                syncType:
+                  type: string
+                  enum: [full, incremental]
+                  default: incremental
+      responses:
+        '202':
+          description: Sync job created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/GenerationJob'
+
+# =================== COMPONENTS ===================
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+          example:
+            success: false
+            error:
+              message: "Invalid request parameters"
+              statusCode: 400
+              timestamp: "2024-01-01T12:00:00.000Z"
+
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+          example:
+            success: false
+            error:
+              message: "Authentication required"
+              statusCode: 401
+              timestamp: "2024-01-01T12:00:00.000Z"
+
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+          example:
+            success: false
+            error:
+              message: "Insufficient permissions"
+              statusCode: 403
+              timestamp: "2024-01-01T12:00:00.000Z"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+          example:
+            success: false
+            error:
+              message: "Resource not found"
+              statusCode: 404
+              timestamp: "2024-01-01T12:00:00.000Z"
+
+    RateLimited:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+          example:
+            success: false
+            error:
+              message: "Too many requests"
+              statusCode: 429
+              timestamp: "2024-01-01T12:00:00.000Z"
+
+  schemas:
+    # =================== COMMON SCHEMAS ===================
+    ApiResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+            statusCode:
+              type: integer
+            timestamp:
+              type: string
+              format: date-time
+            path:
+              type: string
+            method:
+              type: string
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    PaginationMeta:
+      type: object
+      required: [page, limit, total, totalPages, hasNext, hasPrev]
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        limit:
+          type: integer
+          minimum: 1
+        total:
+          type: integer
+          minimum: 0
+        totalPages:
+          type: integer
+          minimum: 0
+        hasNext:
+          type: boolean
+        hasPrev:
+          type: boolean
+
+    BaseEntity:
+      type: object
+      required: [id, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    # =================== ENUM SCHEMAS ===================
+    UserRole:
+      type: string
+      enum: [admin, editor, viewer]
+
+    QueryType:
+      type: string
+      enum: [query, native, model]
+
+    DescriptionStatus:
+      type: string
+      enum: [draft, pending, approved, rejected]
+
+    JobType:
+      type: string
+      enum: [bulk_generate, sync_metabase, quality_analysis]
+
+    JobStatus:
+      type: string
+      enum: [pending, running, completed, failed, cancelled]
+
+    # =================== ENTITY SCHEMAS ===================
+    User:
+      allOf:
+        - $ref: '#/components/schemas/BaseEntity'
+        - type: object
+          required: [email, firstName, lastName, role, isActive]
+          properties:
+            email:
+              type: string
+              format: email
+            firstName:
+              type: string
+              maxLength: 100
+            lastName:
+              type: string
+              maxLength: 100
+            role:
+              $ref: '#/components/schemas/UserRole'
+            isActive:
+              type: boolean
+            lastLoginAt:
+              type: string
+              format: date-time
+
+    MetabaseConnection:
+      allOf:
+        - $ref: '#/components/schemas/BaseEntity'
+        - type: object
+          required: [name, url, isActive]
+          properties:
+            name:
+              type: string
+              maxLength: 255
+            url:
+              type: string
+              format: uri
+            isActive:
+              type: boolean
+            lastSyncAt:
+              type: string
+              format: date-time
+
+    Collection:
+      allOf:
+        - $ref: '#/components/schemas/BaseEntity'
+        - type: object
+          required: [metabaseId, connectionId, name, path]
+          properties:
+            metabaseId:
+              type: integer
+            connectionId:
+              type: string
+              format: uuid
+            name:
+              type: string
+              maxLength: 255
+            parentId:
+              type: string
+              format: uuid
+            path:
+              type: string
+            description:
+              type: string
+
+    Dashboard:
+      allOf:
+        - $ref: '#/components/schemas/BaseEntity'
+        - type: object
+          required: [metabaseId, collectionId, name]
+          properties:
+            metabaseId:
+              type: integer
+            collectionId:
+              type: string
+              format: uuid
+            name:
+              type: string
+              maxLength: 255
+            description:
+              type: string
+
+    Question:
+      allOf:
+        - $ref: '#/components/schemas/BaseEntity'
+        - type: object
+          required: [metabaseId, dashboardId, name, queryType, queryData]
+          properties:
+            metabaseId:
+              type: integer
+            dashboardId:
+              type: string
+              format: uuid
+            name:
+              type: string
+              maxLength: 255
+            queryType:
+              $ref: '#/components/schemas/QueryType'
+            queryData:
+              type: object
+            metadata:
+              $ref: '#/components/schemas/QuestionMetadata'
+            createdBy:
+              type: string
+              format: uuid
+
+    QuestionMetadata:
+      type: object
+      properties:
+        tables:
+          type: array
+          items:
+            type: string
+        columns:
+          type: array
+          items:
+            type: string
+        aggregations:
+          type: array
+          items:
+            type: string
+        filters:
+          type: array
+          items:
+            type: string
+        joins:
+          type: array
+          items:
+            type: string
+        businessContext:
+          type: string
+
+    Description:
+      allOf:
+        - $ref: '#/components/schemas/BaseEntity'
+        - type: object
+          required: [questionId, status, createdBy]
+          properties:
+            questionId:
+              type: string
+              format: uuid
+            generatedText:
+              type: string
+            approvedText:
+              type: string
+            status:
+              $ref: '#/components/schemas/DescriptionStatus'
+            createdBy:
+              type: string
+              format: uuid
+            approvedBy:
+              type: string
+              format: uuid
+            aiProvider:
+              type: string
+            aiModel:
+              type: string
+            generationCost:
+              type: integer
+              description: Cost in cents
+            qualityScore:
+              type: integer
+              minimum: 0
+              maximum: 100
+
+    GenerationJob:
+      allOf:
+        - $ref: '#/components/schemas/BaseEntity'
+        - type: object
+          required: [type, status, progress, totalItems, processedItems, parameters, createdBy]
+          properties:
+            type:
+              $ref: '#/components/schemas/JobType'
+            status:
+              $ref: '#/components/schemas/JobStatus'
+            progress:
+              type: integer
+              minimum: 0
+              maximum: 100
+            totalItems:
+              type: integer
+              minimum: 0
+            processedItems:
+              type: integer
+              minimum: 0
+            errorMessage:
+              type: string
+            parameters:
+              type: object
+            createdBy:
+              type: string
+              format: uuid
+            startedAt:
+              type: string
+              format: date-time
+            completedAt:
+              type: string
+              format: date-time
+
+    # =================== COMPOSITE SCHEMAS ===================
+    QuestionWithDescription:
+      allOf:
+        - $ref: '#/components/schemas/Question'
+        - type: object
+          properties:
+            description:
+              $ref: '#/components/schemas/Description'
+            dashboard:
+              type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+            collection:
+              type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                path:
+                  type: string
+
+    CollectionTreeNode:
+      type: object
+      required: [id, name, path, children, dashboardCount, questionCount, descriptionProgress]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        path:
+          type: string
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/CollectionTreeNode'
+        dashboardCount:
+          type: integer
+          minimum: 0
+        questionCount:
+          type: integer
+          minimum: 0
+        descriptionProgress:
+          type: object
+          properties:
+            total:
+              type: integer
+              minimum: 0
+            approved:
+              type: integer
+              minimum: 0
+            pending:
+              type: integer
+              minimum: 0
+            draft:
+              type: integer
+              minimum: 0
+
+    # =================== REQUEST SCHEMAS ===================
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 1
+
+    RefreshTokenRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+          minLength: 1
+
+    GenerateDescriptionRequest:
+      type: object
+      required: [questionId]
+      properties:
+        questionId:
+          type: string
+          format: uuid
+        useTemplate:
+          type: boolean
+          default: false
+        customPrompt:
+          type: string
+        aiProvider:
+          type: string
+          enum: [openai, anthropic]
+          default: openai
+        aiModel:
+          type: string
+
+    BulkGenerateRequest:
+      type: object
+      required: [options]
+      properties:
+        questionIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        filters:
+          type: object
+          properties:
+            dashboardId:
+              type: string
+              format: uuid
+            collectionId:
+              type: string
+              format: uuid
+            status:
+              $ref: '#/components/schemas/DescriptionStatus'
+        options:
+          type: object
+          required: [useTemplate, aiProvider, aiModel, batchSize]
+          properties:
+            useTemplate:
+              type: boolean
+            customPrompt:
+              type: string
+            aiProvider:
+              type: string
+              enum: [openai, anthropic]
+            aiModel:
+              type: string
+            batchSize:
+              type: integer
+              minimum: 1
+              maximum: 50
+
+    UpdateDescriptionRequest:
+      type: object
+      properties:
+        approvedText:
+          type: string
+        status:
+          $ref: '#/components/schemas/DescriptionStatus'
+
+    # =================== RESPONSE SCHEMAS ===================
+    LoginResponse:
+      type: object
+      required: [user, accessToken, refreshToken, expiresIn]
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        expiresIn:
+          type: integer
+          description: Token expiry time in seconds
+
+    RefreshTokenResponse:
+      type: object
+      required: [accessToken, expiresIn]
+      properties:
+        accessToken:
+          type: string
+        expiresIn:
+          type: integer
+          description: Token expiry time in seconds
+
+    GenerateDescriptionResponse:
+      type: object
+      required: [description, generationMetrics]
+      properties:
+        description:
+          $ref: '#/components/schemas/Description'
+        generationMetrics:
+          type: object
+          properties:
+            tokensUsed:
+              type: integer
+            cost:
+              type: number
+              description: Cost in cents
+            responseTime:
+              type: integer
+              description: Response time in milliseconds
+            qualityScore:
+              type: integer
+              minimum: 0
+              maximum: 100
